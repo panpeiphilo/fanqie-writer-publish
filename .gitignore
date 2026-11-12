@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+.fanqie_upload_state.json
+*.csv
+.DS_Store
