@@ -61,10 +61,16 @@ def find_ab():
 AB = find_ab()
 
 
-def ab(args, stdin=None, timeout=180):
-    r = subprocess.run([AB] + args, input=stdin, capture_output=True,
-                       text=True, encoding='utf-8', errors='replace', timeout=timeout)
-    return (r.stdout or '') + (r.stderr or '')
+def ab(args, stdin=None, timeout=120):
+    """调用 agent-browser。单次调用绝不无限等待——超时返回空串，由上层判定失败。"""
+    try:
+        r = subprocess.run([AB] + args, input=stdin, capture_output=True,
+                           text=True, encoding='utf-8', errors='replace', timeout=timeout)
+        return (r.stdout or '') + (r.stderr or '')
+    except subprocess.TimeoutExpired:
+        return ''
+    except Exception:
+        return ''
 
 
 def ev(js, timeout=180):
@@ -172,6 +178,26 @@ def click_button(text, exact=False):
     return 'ok' in ev(js)
 
 
+def page_url():
+    out = ev('location.href', timeout=25).strip().strip('"')
+    return out
+
+
+def ensure_login(book_id, tries=2):
+    """开跑前一次性确认登录态。掉登录立刻失败，不要逐章重试（否则 4 章能耗掉半小时）。"""
+    for i in range(tries):
+        ab(['open', BOOK_MANAGE % book_id], timeout=90)
+        time.sleep(2.0)
+        u = page_url()
+        if '/login' in u:
+            return False, '未登录（页面跳转到了 %s）' % u
+        if wait_bool(JS_HAS['manage'], timeout=20):
+            return True, 'ok'
+        if i + 1 < tries:
+            time.sleep(3.0)
+    return False, '章节管理页未就绪（也可能是作品 ID 不对或网络慢）'
+
+
 def read_existing_nums(book_id):
     """读取后台已有章号（已发布 + 待发布 + 草稿箱），用于幂等跳过。"""
     nums = set()
@@ -277,10 +303,15 @@ def main():
 
     existing = set()
     if not a.force and not a.dry_run:
+        print('检查登录态…')
+        ok_login, why = ensure_login(a.book_id)
+        if not ok_login:
+            sys.exit('[LOGIN] %s\n'
+                     '请在同一 agent-browser 会话里重新登录 fanqienovel.com（扫码或验证码），再重跑本命令。' % why)
         print('读取后台已有章号…')
         got = read_existing_nums(a.book_id)
         if got is None:
-            sys.exit('无法读取后台，请确认已登录 fanqienovel.com')
+            sys.exit('[LOGIN] 无法读取后台章号，确认已登录 fanqienovel.com 后重跑')
         existing = got
         print('后台已有 %d 章（最大第%d章）' % (len(existing), max(existing) if existing else 0))
 
