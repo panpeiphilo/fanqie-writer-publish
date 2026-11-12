@@ -218,6 +218,29 @@ def read_existing_nums(book_id):
     return nums
 
 
+JS_META = """(() => {
+  const n = document.querySelector('input.byte-input');
+  const t = document.querySelector('input[placeholder="请输入标题"]');
+  return JSON.stringify({n: n ? n.value : '', t: t ? t.value : ''});
+})()"""
+
+
+def fill_meta(num, name, tries=3):
+    """填写章号 + 标题，并读回校验。
+
+    首次填完就存草稿会出现「未命名草稿」——编辑器刚渲染时输入框还没挂上焦点，
+    内容被清掉但正文写入成功，字数校验也过得去，肉眼不查就漏了。"""
+    for i in range(tries):
+        ab(['type', 'input.byte-input', str(num)])
+        ab(['type', 'input[placeholder="请输入标题"]', name])
+        time.sleep(0.4)
+        m = ev_json(JS_META) or {}
+        if str(m.get('n', '')).strip() == str(num) and (m.get('t') or '').strip() == name.strip():
+            return True
+        time.sleep(0.8)
+    return False
+
+
 def upload_one(book_id, ch, interval_note=''):
     n, name = ch['num'], ch['name']
     ab(['open', BOOK_MANAGE % book_id], timeout=120)
@@ -239,8 +262,9 @@ def upload_one(book_id, ch, interval_note=''):
         return False, '编辑页标题框未渲染'
     time.sleep(0.6)
 
-    ab(['type', 'input.byte-input', str(n)])
-    ab(['type', 'input[placeholder="请输入标题"]', name])
+    got_meta = fill_meta(n, name)
+    if not got_meta:
+        return False, '章号/标题填写失败（后台读回为空或与源不符）'
 
     js = ("(() => {\n  const paras = " + json.dumps(ch['body'], ensure_ascii=False) + ";\n"
           "  const el = document.querySelectorAll('.ProseMirror')[0];\n"
@@ -263,6 +287,9 @@ def upload_one(book_id, ch, interval_note=''):
         return False, '找不到「存草稿」按钮'
     if not wait_bool("""document.body.innerText.includes('已保存')""", timeout=20):
         return False, '保存后未见「已保存」回执'
+    m2 = ev_json(JS_META) or {}
+    if not str(m2.get('n', '')).strip() or not (m2.get('t') or '').strip():
+        return False, '存草稿后章号/标题为空，会生成「未命名草稿」，需人工补齐'
 
     got = ev_json("""(() => {const r=document.body.innerText.match(/正文字数[\\s\\n]*(\\d+)/);
                       return JSON.stringify({w: r ? parseInt(r[1]) : -1});})()""")
