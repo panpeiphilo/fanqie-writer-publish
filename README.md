@@ -1,6 +1,6 @@
 # fanqie-writer-publish
 
-把本地小说章节批量搬进**番茄小说作家后台草稿箱**的自动化工具，打包为可直接安装的 Agent Skill。
+把本地小说章节批量搬进**番茄小说作家后台草稿箱**、并按卷归档的自动化工具，打包为可直接安装的 Agent Skill。
 
 > 上传到草稿箱为止。发布、定时发布权限留给作者本人。
 
@@ -11,55 +11,70 @@
 - 打开后台 → 新建章节 → 填章号 → 填标题 → 粘贴正文 → 检查有没有吞段 → 存草稿
 - 一章两次点击、三次粘贴，一天两章，一年 700 次
 - 粘贴长文经常整章挤成一段，或者空行全丢，改起来比重打还慢
+- 长篇要分卷，后台卷还没建，或者新章全落进了默认那一卷
 
-这个 skill 把这一串动作压成一条命令，并且**逐章校验段落数**——吞段会当场报错停下，不会静默存进一个残章。
+这个 skill 把这一串动作压成一条命令，并且**逐章校验段落数与字数**——吞段会当场报错停下，不会静默存进一个残章。
 
 ## 特性
 
 | 特性 | 说明 |
 |---|---|
 | **ProseMirror 正确注入** | 走 `execCommand('insertText')`，每段生成独立 `<p>`，不是塞 HTML 假分段 |
-| **幂等** | 上传前读后台已有章号，已存在的自动跳过，不会造出两个「第139章」 |
-| **断点续传** | 每章成功写 state 文件，中断后重跑从断点继续 |
-| **逐章校验** | 段落数必须一致，平台字数偏差超阈值即停 |
+| **受控 input 正确填写** | 章号/标题用原生 setter + input 事件，避开 headless 焦点丢失导致的「第 章 XXX」 |
+| **幂等** | 上传前读草稿箱已有章号，已存在的自动跳过，不会造出两个「第139章」 |
+| **逐章回读校验** | 每章存完回读草稿箱确认章号出现，未见即停，不静默放过 |
+| **分卷** | `--list` 读服务端卷列表 / `--create` 建卷（自动编号）/ `--assign` 改章归属 |
 | **只写草稿** | 永不点「下一步」，不触发发布审核，不影响全勤/星火的时间点 |
 | **状态核对** | 附带脚本抓后台章节状态，可导出 CSV，可与本地字数对账 |
+| **零依赖** | 只用 Python 标准库自带 CDP 客户端，不需要装 Playwright / Puppeteer / agent-browser |
 
 ## 安装
 
 ```bash
-# 1. 安装浏览器自动化依赖
-npm install -g agent-browser
-agent-browser install
-
-# 2. 验证 Node 真的能跑（不输出 ok 就是坏的）
-node -e "console.log('ok')"
-
-# 3. 把本目录放进 skills 目录
-#    WorkBuddy：~/.workbuddy/skills/fanqie-writer-publish
-#    Claude Code：~/.claude/skills/fanqie-writer-publish
+# 只需要 Python 3.8+ 和一个本机 Chrome
+# 把本目录放进 skills 目录：
+#   WorkBuddy：~/.workbuddy/skills/fanqie-writer-publish
+#   Claude Code：~/.claude/skills/fanqie-writer-publish
 ```
+
+Chrome 不在默认路径时，用环境变量指过去：
+
+```bash
+export CHROME_PATH="/path/to/chrome"        # Windows Git Bash 同理
+export FANQIE_PROFILE="$HOME/.fanqie-profile"   # 登录态存放位置，可改
+```
+
+> 旧版脚本 `fanqie_upload.py` 需要 `npm install -g agent-browser`。它在一部分
+> Windows / RDP 环境里起不来（`Chrome exited early (exit=0)`），所以主推纯 CDP 版本。
+> 见 `references/troubleshooting.md` §8。
 
 ## 快速开始
 
 ```bash
-# 0. 先登录一次（会弹出浏览器窗口，扫码或短信验证码）
-agent-browser open https://fanqienovel.com/main/writer/login --headed
+# 0. 首次：开有头浏览器登录一次（扫码约 2 分钟有效）
+python scripts/fanqie_upload_cdp.py --book-id 7682830798759676952 \
+    --from 148 --to 148 --dir ./chapters --headed
 
-# 1. 体检：确认后台停在第几章、有没有已排的定时
+# 1. 体检：后台停在第几章、有没有已排的定时、分了几卷
 python scripts/check_status.py --book-id 7682830798759676952 --last 15
+python scripts/fanqie_volume.py --book-id 7682830798759676952 --list
 
-# 2. 干跑：只解析，不写入
-python scripts/fanqie_upload.py --book-id 7682830798759676952 \
-    --from 139 --to 143 --file "./《书名》发布版.txt" --dry-run
+# 2. 建卷（只给卷名，前缀「第N卷：」由后台自动编号）
+python scripts/fanqie_volume.py --book-id 7682830798759676952 --create 合伙人
 
-# 3. 真跑（小批量）
-python scripts/fanqie_upload.py --book-id 7682830798759676952 \
-    --from 139 --to 143 --file "./《书名》发布版.txt" --interval 40
+# 3. 干跑：只解析，不写入
+python scripts/fanqie_upload_cdp.py --book-id 7682830798759676952 \
+    --from 148 --to 152 --dir ./chapters --dry-run
 
-# 4. 放量
-python scripts/fanqie_upload.py --book-id 7682830798759676952 \
-    --from 144 --to 180 --dir ./chapters --interval 60
+# 4. 真跑（小批量，显式指定卷）
+python scripts/fanqie_upload_cdp.py --book-id 7682830798759676952 \
+    --from 148 --to 149 --dir ./chapters \
+    --volume "第三卷：中层管理" --interval 45
+
+# 5. 放量
+python scripts/fanqie_upload_cdp.py --book-id 7682830798759676952 \
+    --from 150 --to 165 --dir ./chapters \
+    --volume "第三卷：中层管理" --interval 60
 ```
 
 `book-id` 在章节管理页 URL 里：
@@ -67,10 +82,10 @@ python scripts/fanqie_upload.py --book-id 7682830798759676952 \
 
 ## 章节文件格式
 
-单章文件（`--dir`），首行是章名，其后每行一个自然段：
+单章文件（`--dir`），文件名 `第148章_标题.txt`，首行是章名，其后每行一个自然段：
 
 ```
-第139章 阿福觉醒
+第148章 幕末·双邀
 
 天亮了。
 
@@ -83,7 +98,7 @@ python scripts/fanqie_upload.py --book-id 7682830798759676952 \
 
 ## 工作原理
 
-番茄的章节编辑器是 **ProseMirror**。这决定了只有一条路走得通：
+番茄的章节编辑器是 **ProseMirror**。这决定了正文只有一条路走得通：
 
 ```js
 const el = document.querySelectorAll('.ProseMirror')[0];  // 页面上有 5 个，正文是第 0 个
@@ -91,13 +106,35 @@ el.focus();
 document.execCommand('selectAll');
 document.execCommand('delete');
 document.execCommand('insertText', false, paras.join('\n'));
-el.querySelectorAll('p').length;   // 应等于段落数
+el.querySelectorAll('p').length;   // ≈ 段落数 + 1
 ```
 
 - 直接 `innerHTML = ...` → React 状态不更新，存进去是空章
 - `\n` 交给 ProseMirror 处理 → 每段生成独立 `<p>`，正好是小说要的分段
+- 末尾会多一个占位空 `<p>`，**不占字数**，不要去删
 
-细节（选择器、按钮文案、版本冲突弹窗、id 关系）见 [`references/backend-dom.md`](references/backend-dom.md)。
+章号和标题是 React 受控 input，必须用原生 setter：
+
+```js
+const s = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+s.call(e, '148');
+e.dispatchEvent(new Event('input', {bubbles: true}));
+e.dispatchEvent(new Event('change', {bubbles: true}));
+```
+
+而所有点击都要走 CDP 的 `Input.dispatchMouseEvent`——`element.click()` 对这套前端无效。
+
+细节（选择器、分卷弹窗结构、草稿箱表、版本冲突弹窗、id 关系）见
+[`references/backend-dom.md`](references/backend-dom.md)。
+
+## 分卷的两个坑
+
+1. **建卷只有一处入口**：章节编辑页顶部点卷名 → 弹窗底部「新建分卷」→ 输卷名 →
+   点**绿勾**。按 Enter、点底部「确定」都无效（后者在新建态是灰的）。
+2. **不允许两个空卷并存**：新建一卷后立刻再建下一卷，接口返回
+   `-4054 暂不支持创建多个无章节的分卷`。要么先给上一卷挂一章，要么按发布节奏到点再建。
+
+判定卷有没有真的建上，只看**章节管理页的卷筛选下拉**（服务端数据），不要看弹窗里的列表。
 
 ## 已知限制
 
@@ -105,6 +142,7 @@ el.querySelectorAll('p').length;   // 应等于段落数
 - **需要手动登录一次**。番茄没有可用的长期 token 方案，扫码有效期约 2 分钟。
 - **不处理定时发布**。这是刻意的：发布不可撤销，且直接决定全勤/星火的时间点。
 - **不生成正文**。只做「本地 txt → 后台编辑器」的搬运。
+- **不能跨进程保持浏览器会话**。Chrome 随脚本退出而结束，批量上传要在同一条命令里跑完。
 
 ## 风险声明
 
@@ -116,12 +154,15 @@ el.querySelectorAll('p').length;   // 应等于段落数
 fanqie-writer-publish/
 ├── SKILL.md                       # Agent Skill 入口（工作流 + 硬约束）
 ├── scripts/
-│   ├── fanqie_upload.py           # 主流程
+│   ├── cdp_client.py              # 零依赖 CDP 客户端（起 Chrome / 连标签页 / 派发真实事件）
+│   ├── fanqie_upload_cdp.py       # 主流程（纯 CDP 通道）
+│   ├── fanqie_volume.py           # 分卷：查 / 建 / 改归属
+│   ├── fanqie_upload.py           # 旧版（依赖 agent-browser）
 │   └── check_status.py            # 状态核对
 └── references/
-    ├── backend-dom.md             # 后台 DOM 结构、选择器、注入方法
+    ├── backend-dom.md             # 后台 DOM 结构、选择器、分卷弹窗、注入方法
     ├── risk-control.md            # 平台规则、发文额度、节流依据
-    └── troubleshooting.md         # 12 类故障排查
+    └── troubleshooting.md         # 14 类故障排查
 ```
 
 ## License

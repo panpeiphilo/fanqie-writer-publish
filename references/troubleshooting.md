@@ -104,3 +104,70 @@ SPA 从路由跳转后编辑器挂载有延迟，实测 2-5 秒。脚本已等 3
 ## 12. 抓不到章节行
 
 列表可能是虚拟滚动，或表结构改版。用 `agent-browser snapshot` 看真实结构，然后改 `check_status.py` 里的 `GRAB` 选择器。class 名不可靠（编译生成），优先依赖 `table tr` + `td` 顺序。
+
+---
+
+## 8. `agent-browser open` 恒报 `Chrome exited early (exit code 0)`
+
+**症状**：`doctor` 的 launch test 直接 fail；`eval` / `connect` 有时不是失败而是被
+**SIGTERM 打断**（进程直接没输出就死）。
+
+**原因**：agent-browser 内部自起 Chrome 的通道在部分 Windows/RDP 环境不可用，
+与 Node、与 Chrome 版本都无关，换 profile 也没用。
+
+**处理**：**弃用 agent-browser，改纯 CDP 通道**：
+
+```bash
+python scripts/fanqie_upload_cdp.py --book-id <bookId> --from 148 --to 149 --dir ./chapters
+python scripts/fanqie_volume.py --book-id <bookId> --list
+```
+
+`scripts/cdp_client.py` 自带零依赖 CDP 客户端（手写 WebSocket），
+用 `--headless=new` 起 Chrome + 持久 profile，可以复用已登录的 cookie。
+
+## 9. 建卷报 `-4054 暂不支持创建多个无章节的分卷`
+
+**不是脚本 bug，是平台规则**：后台不允许同时存在两个空卷。
+
+**处理**：先给已建好的空卷挂上至少一章（上传一章到该卷），再建下一卷；
+或者干脆按发布节奏走——上一卷快要启用时再建下一卷。
+
+## 10. 草稿存成「第 章 XXX」（章号丢失）
+
+**原因**：用「点击 + Ctrl+A + insertText」填章号框，headless 下焦点丢失，
+只有标题填进去了。
+
+**处理**：
+1. 改用原生 setter（见 `backend-dom.md` §7）；
+2. 写完必须回读 `input.value` 比对；
+3. 已经存坏的，用编辑页 URL 打开该草稿补章号：行内 `<a href>` 里带 `chapterId`，
+   拼 `/publish/{chapterId}?enter_from=newdraft` 即可直达，不用点列表。
+
+## 11. 正文只进去 2 段 / 存成空章
+
+**原因**：`document.execCommand('insertText')` 需要编辑器**真实焦点**，
+直接 `el.focus()` 在 headless 下不够。
+
+**处理**：先用 `Input.dispatchMouseEvent` 在编辑器区域内点一下，再 `focus()` +
+`selectAll` + `delete` + `insertText`，然后按 `<p>` 数量与净字数双校验，
+不符重试（最多 3 次）。`fanqie_upload_cdp.py` 的 `inject_body()` 已内置。
+
+## 12. `Page.close` 之后所有命令 30s 超时
+
+**原因**：关掉的正是自己连着的那个标签页，WebSocket 随之失效。
+
+**处理**：**不要对主标签页调 `Page.close`**。要换页面就 `Page.navigate` 到新 URL。
+
+## 13. `TimeoutError: timed out`（`Page.navigate` 无响应）
+
+**原因**：socket 超时太短（默认 30s），章节管理页首次加载会超过。
+
+**处理**：`cdp_client.WS(timeout=120)`、`CDP.call` 循环 180s（已在脚本里设好）。
+另外 Chrome 起不来时 `launch()` 会自动重试 3 次——「启动即退出 exit=0」是偶发的。
+
+## 14. 幂等判定要看卷，不能只看章号
+
+只按章号跳过的话，「章号对但卷错」的章节会被静默放过、永远修不好。
+
+**处理**：跳过条件写 `章号已存在`；若还需校验归属，用
+`fanqie_volume.py --assign 148="第三卷：中层管理"` 显式改，别指望自动修。

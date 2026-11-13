@@ -121,3 +121,126 @@ el.querySelectorAll('p').length          // 应等于 paras.length
 ```
 
 比依赖 class 名稳：番茄的 class 是编译生成的（`arco-tabs-header-title`、`serial-input` 之类），表结构反而稳定。
+
+---
+
+## 6. 草稿箱表格（和章节管理表不是同一张）
+
+草稿箱 tab 里页面上会有**两张表**：上半是章节管理表（含审核状态/发布时间），下半才是草稿箱表：
+
+```
+表头：名称 | 字数 | 修改时间 | 操作
+```
+
+- 抓草稿箱必须按**表头含「修改时间」**定位表格，不能直接取 `document.querySelectorAll('table tr')`（会混进章节管理表的行）
+- 进草稿箱前要先点「草稿箱」tab（`.arco-tabs-header-title`），切完等 4-5 秒表格才刷新
+- 行内 `<a>` 是**预览**链接：`/main/writer/preview/{bookId}&{chapterId}`（`target=_blank`）
+  → 要进编辑页得自己拼：`/main/writer/{bookId}/publish/{chapterId}?enter_from=newdraft`
+
+## 7. 章号 / 标题：受控 input，只能用原生 setter
+
+```html
+<!-- 章号：无 placeholder，宽度约 72 -->
+<input type="text" class="serial-input byte-input byte-input-size-default" value="148">
+<!-- 标题 -->
+<input placeholder="请输入标题" class="serial-input serial-editor-input-hint-area byte-input byte-input-size-default">
+```
+
+**不要用「点击 + Ctrl+A + insertText」** —— headless 下焦点会丢失，章号框填不进去，
+结果存成「第 章 幕末·双邀」这种残废标题（实践中最常见的翻车点）。
+
+正确写法：
+
+```js
+const e = /* 目标 input */;
+const s = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+s.call(e, '148');
+e.dispatchEvent(new Event('input',  {bubbles: true}));
+e.dispatchEvent(new Event('change', {bubbles: true}));
+e.value   // 回读，必须等于写入值
+```
+
+两框的定位表达式（页面无 id，class 是编译生成的）：
+
+```js
+// 章号：serial-input 里宽度 < 160 的那个（标题框约 508）
+[...document.querySelectorAll('input.serial-input')]
+  .filter(i => { const w = i.getBoundingClientRect().width; return w > 20 && w < 160; })[0]
+
+// 标题
+document.querySelector('input[placeholder="请输入标题"]')
+```
+
+## 8. 分卷（volume）—— 后台唯一能建卷的地方
+
+### 8.1 三处控件，只有一处能建
+
+| 位置 | 能做什么 |
+|---|---|
+| 章节管理页 `.serial-select.flat-serial-select` | 卷**筛选**（不改归属），也是新建章节的默认卷来源 |
+| 章节管理页「编辑分卷」弹窗 | `.chapter-volume-list-item-normal > span + i.tomato-edit + i.tomato-delete`，**只能改名/删** |
+| **章节编辑页 `.publish-header-volume-wrap`** | 弹 `.serial-modal.editor-volume`：选卷改归属 + **新建分卷** |
+
+### 8.2 卷弹窗 DOM（实测）
+
+```
+div.serial-modal.editor-volume.byte-modal
+├ div.editor-volume-list
+│   ├ div.editor-volume-list-item            ← 新建态
+│   │   └ div.editor-volume-list-item-edit
+│   │       ├ div.editor-volume-list-item-edit-left
+│   │       │    文本「第四卷：」                        ← 后台自动编号，别自己写
+│   │       │    └ div.common-input-hint.input
+│   │       │         └ input[placeholder=请输入分卷名字][maxlength=16]   ← 只输卷名正文
+│   │       │         └ div.common-input-hint-sign 「7/20」               ← 计数含前缀
+│   │       ├ i.tomato-confirm.green    ← ★ 绿勾：调接口建卷（唯一有效）
+│   │       └ i.tomato-cancel.red       ← 红叉：放弃
+│   └ div.editor-volume-list-item           ← 常态
+│       └ div.editor-volume-list-item-normal.selected
+│           ├ span 「第三卷：中层管理」
+│           ├ i.tomato-delete.disabled  （当前卷不可删）
+│           └ i.tomato-edit
+└ div.byte-modal-footer
+    └ div.editor-volume-footer
+        ├ div.editor-volume-footer-add-volume   「新建分卷」
+        └ button 取消 | button 确定             ← 确定在新建态下 disabled
+```
+
+### 8.3 建卷四步
+
+1. 点 `.editor-volume-footer-add-volume`
+2. 往 `input[placeholder=请输入分卷名字]` 输**卷名正文**（`合伙人`，不要带「第四卷：」）
+3. 点 `i.tomato-confirm`（绿勾）→ 会打 `/api/author/volume/add_volume/v0`
+4. 点底部「取消」关窗（**不要点「确定」**，那会把当前章节改到这个新卷）
+
+### 8.4 无效做法（都试过，全废）
+
+| 做法 | 结果 |
+|---|---|
+| 输完整卷名后按 **Enter** | 只在本地态，关窗即丢弃，**不调接口** |
+| 点底部「确定」 | 新建态下 `disabled`；语义是「把当前章节归到选中卷」 |
+| 看弹窗列表判断成败 | 不可靠：本地态项和已落库项长得一样 |
+| **看章节管理页「卷筛选下拉」** | ✅ 唯一可靠，数据来自服务端 |
+
+### 8.5 平台硬限制：不允许两个空卷并存
+
+```
+POST /api/author/volume/add_volume/v0
+→ {"code":-4054,"data":null,"message":"暂不支持创建多个无章节的分卷"}
+```
+
+新建一卷后它是 0 章，此时再建下一卷必被拒。
+**要连续建 N 卷，必须每建一卷就先给它挂至少一章**（或按发布节奏，等上一卷有内容后再建下一卷）。
+
+### 8.6 改章节归属
+
+弹窗里点目标卷的 `span` → 点底部「确定」（此时才可点）→ 页头
+`.publish-header-volume-name` 的文本会变 → 再点「存草稿」持久化。
+
+## 9. 段落数：平台 p 数 = 本地段数 + 1
+
+ProseMirror 编辑区末尾会保留一个空 `<p>` 占位，所以灌完 95 段读到 **96 个 p** 是正常的：
+
+- **不占字数**（平台字数与本地净字仍逐字一致）
+- **不要为了凑数去删**——删掉可能把末段一起吞掉
+- 校验用「p ≥ 段数-1」+「净字数差 ≤30」双条件，别用严格相等
