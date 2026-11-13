@@ -3,3 +3,5 @@ __pycache__/
 .fanqie_upload_state.json
 *.csv
 .DS_Store
+config.json
+config.env

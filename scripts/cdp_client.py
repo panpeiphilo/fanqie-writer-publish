@@ -22,12 +22,17 @@ import sys
 import time
 import urllib.request
 
-PORT = int(os.environ.get('FANQIE_CDP_PORT', '9333'))
-PROFILE = os.environ.get('FANQIE_PROFILE') or os.path.join(
-    os.path.expanduser('~'), '.fanqie-profile')
+try:                                    # 同目录直接 import；被当包引用时走相对导入
+    import fanqie_config as CFG
+except ImportError:                     # pragma: no cover
+    from . import fanqie_config as CFG
+
+# 配置优先级：环境变量 > config.json > 自动发现 > 默认（见 fanqie_config.py）
+PORT = int(CFG.get('cdp_port') or 9333)
+PROFILE = CFG.profile()
 
 CHROME_CANDS = [
-    os.environ.get('CHROME_PATH') or '',
+    CFG.get('chrome') or '',
     r'C:\Program Files\Google\Chrome\Application\chrome.exe',
     r'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe',
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
@@ -200,6 +205,7 @@ def launch(headless=True, tries=3, port=PORT, profile=None):
         return None
     profile = profile or PROFILE
     os.makedirs(profile, exist_ok=True)
+    print('[Chrome] profile: %s' % profile)
     args = [find_chrome(), '--remote-debugging-port=%d' % port,
             '--remote-allow-origins=*', '--user-data-dir=%s' % profile,
             '--no-first-run', '--no-default-browser-check',

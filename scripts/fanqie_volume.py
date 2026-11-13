@@ -33,6 +33,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import cdp_client as C  # noqa: E402
+import fanqie_config as CFG  # noqa: E402
 
 MANAGE = 'https://fanqienovel.com/main/writer/chapter-manage/%s'
 EDIT = 'https://fanqienovel.com/main/writer/%s/publish/%s?enter_from=newdraft'
@@ -288,12 +289,15 @@ def assign(cdp, book_id, vol, chapter_key):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--book-id', required=True)
+    ap.add_argument('--book-id', default=CFG.book_id(),
+                    help='可省，写在 config.json 的 book_id / 环境变量 FANQIE_BOOK_ID')
     ap.add_argument('--list', action='store_true', help='读服务端卷列表')
     ap.add_argument('--create', nargs='+', metavar='名称', help='新建卷（只给卷名，后台自动编号）')
     ap.add_argument('--assign', nargs='+', metavar='章号=卷名', help='把草稿改到指定卷')
     ap.add_argument('--headed', action='store_true')
     a = ap.parse_args()
+    if not a.book_id:
+        ap.error('缺 bookId：命令行给 --book-id，或写进 config.json / FANQIE_BOOK_ID')
     if not (a.list or a.create or a.assign):
         ap.error('至少给一个动作：--list / --create / --assign')
 

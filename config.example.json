@@ -1,0 +1,16 @@
+{
+  "_readme": "复制本文件为同目录的 config.json 再改。也可以不建配置文件、直接设环境变量（FANQIE_PROFILE / FANQIE_BOOK_ID / CHROME_PATH / FANQIE_CDP_PORT），环境变量优先级更高。config.json 已被 .gitignore 排除，不会被提交。",
+  "_profile": "★ 最常改的一项。Chrome 持久化用户目录，登录态（Cookies）存这里。默认 ~/.fanqie-profile；如果你在别处登录过（比如项目目录旁边的 .fanqie-profile），填那个绝对路径。Windows 反斜杠建议写成正斜杠。留空 = 用默认值，且默认位置没有登录态时会自动去当前目录及其上级找 .fanqie-profile。",
+  "profile": "~/.fanqie-profile",
+  "_profile_示例_绝对路径写法": "D:/Data/WorkBuddy/.fanqie-profile",
+  "_book_id": "章节管理页 URL 末尾那串数字：https://fanqienovel.com/main/writer/chapter-manage/<bookId>",
+  "book_id": "7682830798759676952",
+  "_chrome": "Chrome 可执行文件路径。留空则按顺序探测常见安装位置；探测不到时设 CHROME_PATH。",
+  "chrome": "",
+  "_cdp_port": "DevTools 调试端口，默认 9333。该端口被占用时改这里。",
+  "cdp_port": 9333,
+  "_volume": "批量上传的默认目标分卷全名，如「第三卷：中层管理」。留空 = 不改卷，沿用后台当前筛选卷。",
+  "volume": "",
+  "_interval": "批量上传时每章之间的间隔秒数，默认 45。设太小容易触发风控。",
+  "interval": 45
+}

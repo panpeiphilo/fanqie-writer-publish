@@ -33,6 +33,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import cdp_client as C  # noqa: E402
+import fanqie_config as CFG  # noqa: E402
 
 MANAGE = 'https://fanqienovel.com/main/writer/chapter-manage/%s'
 HEAD_RE = re.compile(r'^第\s*(\d{1,4})\s*章[\s　:：.、]*(.*)$')
@@ -307,17 +308,21 @@ def upload_one(cdp, ch, vol):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--book-id', required=True)
+    ap.add_argument('--book-id', default=CFG.book_id(),
+                    help='可省，写在 config.json 的 book_id / 环境变量 FANQIE_BOOK_ID')
     ap.add_argument('--from', dest='frm', type=int, required=True)
     ap.add_argument('--to', dest='to', type=int, required=True)
     ap.add_argument('--file', help='合并版 txt')
     ap.add_argument('--dir', help='单章 txt 目录')
-    ap.add_argument('--volume', default='', help='目标分卷全名，如「第三卷：中层管理」')
-    ap.add_argument('--interval', type=int, default=45)
+    ap.add_argument('--volume', default=CFG.get('volume') or '',
+                    help='目标分卷全名，如「第三卷：中层管理」')
+    ap.add_argument('--interval', type=int, default=int(CFG.get('interval') or 45))
     ap.add_argument('--dry-run', action='store_true')
     ap.add_argument('--force', action='store_true', help='后台已有同章号也重传')
     ap.add_argument('--headed', action='store_true', help='开有头浏览器（首次登录用）')
     a = ap.parse_args()
+    if not a.book_id:
+        ap.error('缺 bookId：命令行给 --book-id，或写进 config.json / FANQIE_BOOK_ID')
 
     if not a.file and not a.dir:
         raise SystemExit('要么 --file，要么 --dir')
