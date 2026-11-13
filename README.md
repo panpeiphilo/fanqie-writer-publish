@@ -37,11 +37,36 @@
 #   Claude Code：~/.claude/skills/fanqie-writer-publish
 ```
 
-Chrome 不在默认路径时，用环境变量指过去：
+## 配置（一次配好，之后不用再带环境变量）
 
 ```bash
-export CHROME_PATH="/path/to/chrome"        # Windows Git Bash 同理
-export FANQIE_PROFILE="$HOME/.fanqie-profile"   # 登录态存放位置，可改
+cp config.example.json config.json
+# 打开 config.json，改这两项就够：
+#   profile  → 登录态所在目录（默认 ~/.fanqie-profile）
+#   book_id  → 作品 ID
+python scripts/fanqie_config.py     # 自检：生效值 + 来源 + profile 是否可用
+```
+
+自检输出长这样，一眼能看出 profile 最终是从哪来的：
+
+```
+配置文件   : D:\Data\WorkBuddy\fanqie-writer-publish\config.json
+profile   : D:/Data/WorkBuddy/.fanqie-profile        [config.json]
+book_id   : 7682830798759676952                      [config.json]
+chrome    : C:\Program Files\...\chrome.exe  (自动探测) [默认]
+✅ profile 可用：D:/Data/WorkBuddy/.fanqie-profile
+```
+
+取值优先级：**命令行参数 > 环境变量 > `config.json` > 自动发现 > 内置默认**。
+
+- `config.json` 已在 `.gitignore` 里，不会被提交
+- **profile 会自动找**：没配或默认位置为空时，会去 `<当前目录>/.fanqie-profile`、`<上级目录>/.fanqie-profile`、`~/.fanqie-profile` 里挑一个带 Cookies 的用。登录态放在书稿目录旁边也能直接跑，但建议还是显式写进配置，免得换个目录跑就失效
+- 不想写配置文件也可以只用环境变量：
+
+```bash
+export FANQIE_PROFILE="$HOME/.fanqie-profile"
+export CHROME_PATH="/path/to/chrome"          # Windows Git Bash 同理
+export FANQIE_BOOK_ID="7682830798759676952"
 ```
 
 > 旧版脚本 `fanqie_upload.py` 需要 `npm install -g agent-browser`。它在一部分
@@ -52,33 +77,29 @@ export FANQIE_PROFILE="$HOME/.fanqie-profile"   # 登录态存放位置，可改
 
 ```bash
 # 0. 首次：开有头浏览器登录一次（扫码约 2 分钟有效）
-python scripts/fanqie_upload_cdp.py --book-id 7682830798759676952 \
-    --from 148 --to 148 --dir ./chapters --headed
+python scripts/fanqie_upload_cdp.py --from 148 --to 148 --dir ./chapters --headed
 
 # 1. 体检：后台停在第几章、有没有已排的定时、分了几卷
 python scripts/check_status.py --book-id 7682830798759676952 --last 15
-python scripts/fanqie_volume.py --book-id 7682830798759676952 --list
+python scripts/fanqie_volume.py --list
 
 # 2. 建卷（只给卷名，前缀「第N卷：」由后台自动编号）
-python scripts/fanqie_volume.py --book-id 7682830798759676952 --create 合伙人
+python scripts/fanqie_volume.py --create 合伙人
 
 # 3. 干跑：只解析，不写入
-python scripts/fanqie_upload_cdp.py --book-id 7682830798759676952 \
-    --from 148 --to 152 --dir ./chapters --dry-run
+python scripts/fanqie_upload_cdp.py --from 148 --to 152 --dir ./chapters --dry-run
 
 # 4. 真跑（小批量，显式指定卷）
-python scripts/fanqie_upload_cdp.py --book-id 7682830798759676952 \
-    --from 148 --to 149 --dir ./chapters \
+python scripts/fanqie_upload_cdp.py --from 148 --to 149 --dir ./chapters \
     --volume "第三卷：中层管理" --interval 45
 
 # 5. 放量
-python scripts/fanqie_upload_cdp.py --book-id 7682830798759676952 \
-    --from 150 --to 165 --dir ./chapters \
+python scripts/fanqie_upload_cdp.py --from 150 --to 165 --dir ./chapters \
     --volume "第三卷：中层管理" --interval 60
 ```
 
-`book-id` 在章节管理页 URL 里：
-`https://fanqienovel.com/main/writer/chapter-manage/**7682830798759676952**`
+上面省了 `--book-id`，因为配置里已经写好了。没配的话照旧加
+`--book-id 7682830798759676952`（章节管理页 URL 里那串数字）。
 
 ## 章节文件格式
 
@@ -153,7 +174,9 @@ e.dispatchEvent(new Event('change', {bubbles: true}));
 ```
 fanqie-writer-publish/
 ├── SKILL.md                       # Agent Skill 入口（工作流 + 硬约束）
+├── config.example.json            # 配置模板（复制成 config.json 用）
 ├── scripts/
+│   ├── fanqie_config.py           # 配置读取（profile / bookId / chrome / 端口）+ 自检
 │   ├── cdp_client.py              # 零依赖 CDP 客户端（起 Chrome / 连标签页 / 派发真实事件）
 │   ├── fanqie_upload_cdp.py       # 主流程（纯 CDP 通道）
 │   ├── fanqie_volume.py           # 分卷：查 / 建 / 改归属
@@ -162,7 +185,7 @@ fanqie-writer-publish/
 └── references/
     ├── backend-dom.md             # 后台 DOM 结构、选择器、分卷弹窗、注入方法
     ├── risk-control.md            # 平台规则、发文额度、节流依据
-    └── troubleshooting.md         # 14 类故障排查
+    └── troubleshooting.md         # 15 类故障排查
 ```
 
 ## License

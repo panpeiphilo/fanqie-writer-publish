@@ -171,3 +171,50 @@ python scripts/fanqie_volume.py --book-id <bookId> --list
 
 **处理**：跳过条件写 `章号已存在`；若还需校验归属，用
 `fanqie_volume.py --assign 148="第三卷：中层管理"` 显式改，别指望自动修。
+
+## 15. `--list` 卷列表是空的 / 一开跑就跳登录页
+
+**症状**：脚本能起 Chrome，也不报错，但「服务端卷列表」一条都没有；
+或者 `location.href` 里带 `/login`。
+
+**原因**：Chrome 用的 profile 不是你登录过的那个。登录态（Cookies）是按
+`--user-data-dir` 隔离的，换了目录就等于换了个没登录的浏览器。
+典型场景：默认在 `~/.fanqie-profile`，而你当初是在书稿目录旁边
+（比如 `D:/Data/WorkBuddy/.fanqie-profile`）扫的码。
+
+**排查**（一条命令看清最终用的是哪个目录、从哪来的）：
+
+```bash
+python scripts/fanqie_config.py
+```
+
+```
+profile   : D:/Data/WorkBuddy/.fanqie-profile        [config.json]
+✅ profile 可用：D:/Data/WorkBuddy/.fanqie-profile
+```
+
+- 来源列显示 `[config.json]` / `[环境变量 FANQIE_PROFILE]` / `[自动发现（含登录态）]` / `[默认]`
+- 打 ❌ 说明目录都不存在；打 ⚠️ 说明目录在但没有 Cookies（没登录过或登录态已过期）
+
+**处理**（三选一，优先级从高到低）：
+
+```bash
+# 1) 写进配置文件（一劳永逸）
+cp config.example.json config.json
+#    改 config.json 里的 "profile" 为真正有登录态的那个目录
+
+# 2) 环境变量（临时）
+FANQIE_PROFILE="D:/Data/WorkBuddy/.fanqie-profile" python scripts/fanqie_volume.py --list
+
+# 3) 重新登录到这个 profile
+python scripts/fanqie_upload_cdp.py --from 1 --to 1 --dir ./ch --headed
+```
+
+**自动发现**：没有配置、且默认目录为空时，脚本会依次在
+`<当前目录>/.fanqie-profile`、`<上级目录>/.fanqie-profile`、`~/.fanqie-profile`、
+`<skill根>/.fanqie-profile` 里找一个带 Cookies 的用，并在自检里标成
+`[自动发现（含登录态）]`。所以「登录态在书稿目录旁边」这种情况通常直接能跑，
+但**换个目录执行就可能失效**——长期用还是显式写进 `config.json` 稳妥。
+
+> 判断「有没有登录态」的口径：profile 目录下存在
+> `Default/Network/Cookies`（新版 Chrome）或 `Default/Cookies`（旧版）。

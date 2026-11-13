@@ -17,13 +17,42 @@ agent_created: true
 
 ## 前置条件
 
-1. **本机有 Chrome**（路径找不到时用环境变量 `CHROME_PATH` 指过去）
+1. **本机有 Chrome**（路径找不到时用环境变量 `CHROME_PATH` 指过去，或写进 `config.json`）
 2. **已登录 fanqienovel.com**，且登录态落在持久 profile 里
-   - 默认 profile：`~/.fanqie-profile`（可用 `FANQIE_PROFILE` 覆盖）
+   - 默认 profile：`~/.fanqie-profile`（改法见下节「配置」）
    - 首次使用：`python scripts/fanqie_upload_cdp.py ... --headed` 打开有头浏览器，人工扫码一次
 3. **知道 bookId**：章节管理页 URL 里那串数字
    `https://fanqienovel.com/main/writer/chapter-manage/7682830798759676952`
 4. **章节文件格式**：首行为 `第N章 标题`，其后每行一个自然段，空行会被忽略
+
+## 配置（profile / bookId 不用每次敲）
+
+```bash
+cp config.example.json config.json     # 只需改 profile 和 book_id 两项
+python scripts/fanqie_config.py        # 自检：打印生效值 + 来源 + profile 能否用
+```
+
+`config.json` 已在 `.gitignore` 里，不会被提交。**不要**把真实路径写进
+`config.example.json`（那是模板）。
+
+| 键 | 环境变量 | 默认 | 说明 |
+|---|---|---|---|
+| `profile` | `FANQIE_PROFILE` | `~/.fanqie-profile` | ★ Chrome 持久化目录，登录态在这 |
+| `book_id` | `FANQIE_BOOK_ID` | 空 | 配了就能省掉 `--book-id` |
+| `chrome` | `CHROME_PATH` | 自动探测 | 只在探测不到时需要 |
+| `cdp_port` | `FANQIE_CDP_PORT` | `9333` | 端口被占用时改 |
+| `volume` | `FANQIE_VOLUME` | 空 | 批量上传的默认目标卷 |
+| `interval` | `FANQIE_INTERVAL` | `45` | 每章间隔秒数 |
+
+取值优先级：**命令行参数 > 环境变量 > config.json > 自动发现 > 内置默认**。
+
+**profile 自动发现**：如果配置里没给（或默认的 `~/.fanqie-profile` 是空的），
+脚本会依次去 `<当前目录>/.fanqie-profile`、`<上级目录>/.fanqie-profile`、
+`~/` 找带 Cookies 的目录并自动采用。所以「登录态放在书稿目录旁边」这种情况
+不配也能跑，但**建议还是显式写进 config.json**，免得换目录跑就失效。
+
+配置文件查找顺序：`$FANQIE_CONFIG` → `./config.json` → `<skill根>/config.json` →
+`~/.fanqie/config.json`。
 
 > **通道说明**：优先用**纯 CDP**（`*_cdp.py` 系列，零依赖，本机实测可用）。
 > 老的 `fanqie_upload.py` 依赖 agent-browser，在部分 Windows/RDP 环境中会
@@ -153,6 +182,7 @@ mousedown/mouseup。`cdp_client.py` 的 `click_at()` 已封装。
 
 | 脚本 | 作用 |
 |---|---|
+| `scripts/fanqie_config.py` | 配置读取（profile / bookId / chrome / 端口），`python scripts/fanqie_config.py` 即自检 |
 | `scripts/cdp_client.py` | 零依赖 CDP 客户端：起 Chrome、连标签页、执行 JS、派发真实鼠标/键盘事件 |
 | `scripts/fanqie_upload_cdp.py` | **主推**：解析章节 → 读草稿箱已有章号 → 逐章新建草稿 → 填章号/标题/正文 → 切卷 → 存 → 回读校验 |
 | `scripts/fanqie_volume.py` | 分卷：`--list` 读服务端卷列表 / `--create` 建卷 / `--assign` 改章归属 |
@@ -163,12 +193,12 @@ mousedown/mouseup。`cdp_client.py` 的 `click_at()` 已封装。
 
 | 参数 | 说明 |
 |---|---|
-| `--book-id` | 必填，作品 ID |
+| `--book-id` | 作品 ID；config.json 里配了 `book_id` 可省 |
 | `--from` / `--to` | 章节范围（闭区间） |
 | `--dir` | 单章 txt 目录（文件名 `第148章_标题.txt`） |
 | `--file` | 合并 txt，按 `第N章 标题` 自动切章 |
-| `--volume` | 目标分卷全名，如 `"第三卷：中层管理"` |
-| `--interval` | 每章间隔秒，默认 45 |
+| `--volume` | 目标分卷全名，如 `"第三卷：中层管理"`（默认取 config 的 `volume`） |
+| `--interval` | 每章间隔秒，默认 45（取 config 的 `interval`） |
 | `--dry-run` | 只解析不写入 |
 | `--force` | 跳过「后台已存在」检查（慎用） |
 | `--headed` | 开有头浏览器（首次登录用） |
